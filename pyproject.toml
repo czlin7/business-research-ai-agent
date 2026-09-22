@@ -5,8 +5,5 @@ description = "Small prototype for company research and relevance briefings."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "accelerate",
     "ddgs",
-    "torch",
-    "transformers>=4.37.0",
 ]

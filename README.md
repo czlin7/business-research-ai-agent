@@ -8,7 +8,7 @@ The project demonstrates a simple AI-agent workflow combining a local language m
 
 * Markdown input and output
 * Web search using [DDGS](https://pypi.org/project/ddgs/)
-* Local inference with [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct)
+* Local inference with [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B), using the `Q4_K_M` quantization through Ollama
 * SEI / OxValue.ai business-context assessment
 * Multi-step research workflow
 * Structured briefing with source links
@@ -65,6 +65,7 @@ business-research-ai-agent/
 
 * Python 3.11
 * [uv](https://docs.astral.sh/uv/)
+* [Ollama](https://ollama.com/download)
 * Internet access for web search
 * Internet access on the first run to download the language model
 
@@ -72,9 +73,11 @@ business-research-ai-agent/
 
 ```powershell
 uv sync
+ollama pull qwen3.5:4b-q4_K_M
 ```
 
 `uv` manages the project environment and dependencies from `pyproject.toml` and `uv.lock`.
+Ollama stores and runs the quantized model locally.
 
 ## Usage
 
@@ -104,13 +107,20 @@ uv run python main.py input.md --output reports/oxford-pv.md
 
 ## Model and Tools
 
-### Qwen2.5-0.5B-Instruct
+### Qwen3.5-4B Q4_K_M
 
-The prototype uses **Qwen2.5-0.5B-Instruct**, a small instruction-tuned language model with approximately **0.5 billion parameters**.
+The prototype uses **Qwen3.5-4B**, a four-billion-parameter model, in the
+**Q4_K_M** GGUF quantization.
 
-The model was selected because it is small enough to run locally on a standard laptop while still supporting instruction-following, summarisation and structured text generation.
+Compared with the previous Qwen2.5-0.5B model, it offers substantially greater
+capacity for instruction-following, evidence synthesis and structured writing.
+The four-bit quantization reduces its storage and memory requirements, making
+local inference more practical on consumer hardware, although it will be slower
+and more resource-intensive than the previous 0.5B model.
 
-The model is downloaded from Hugging Face Hub on the first run and cached locally. **Hugging Face Transformers** is used to load the tokenizer and model weights and perform inference on the local machine.
+Ollama downloads the model once, runs it on the local machine and exposes a
+local API at `http://127.0.0.1:11434`. The Python application sends the prompt
+to that local endpoint; it does not send model inference to a hosted API.
 
 ### DDGS
 
@@ -120,7 +130,7 @@ Current company information is retrieved from the web before being passed to the
 
 ```text
 DDGS Web Search → Internet
-Qwen Inference   → Local machine
+Ollama / Qwen   → Local machine
 ```
 
 ## Tests
