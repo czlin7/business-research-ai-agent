@@ -1,10 +1,13 @@
+import io
+import json
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from agent import BusinessResearchAgent, SearchResult
+from agent import BusinessResearchAgent, LocalQwenModel, SearchResult
 
 
 class FakeSearchTool:
@@ -62,8 +65,26 @@ class BusinessResearchAgentTests(unittest.TestCase):
         self.assertIn("Example Company", search.last_query)
         self.assertIn("External evidence", model.last_prompt)
         self.assertIn("solar technology", model.last_prompt)
-        self.assertIn("Sources:", output)
+        self.assertIn("## Sources", output)
         self.assertIn("https://example.com/company", output)
+
+
+class LocalQwenModelTests(unittest.TestCase):
+    @patch("agent.urlopen")
+    def test_uses_qwen35_q4_k_m_through_local_ollama(self, mock_urlopen):
+        response = io.BytesIO(
+            json.dumps({"message": {"content": "Generated briefing"}}).encode()
+        )
+        mock_urlopen.return_value.__enter__.return_value = response
+
+        model = LocalQwenModel()
+
+        self.assertEqual(model.generate("Research request"), "Generated briefing")
+        request = mock_urlopen.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertEqual(payload["model"], "qwen3.5:4b-q4_K_M")
+        self.assertFalse(payload["stream"])
+        self.assertFalse(payload["think"])
 
 
 if __name__ == "__main__":

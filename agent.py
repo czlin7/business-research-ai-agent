@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Iterable, Protocol
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
 @dataclass(frozen=True)
@@ -44,59 +47,63 @@ class WebSearchTool:
 
 
 class LocalQwenModel:
-    """Lazy-loading local LLM adapter for Qwen2.5-0.5B-Instruct."""
+    """Local Ollama adapter for the Qwen3.5-4B Q4_K_M model."""
 
-    def __init__(self, model_name: str = "Qwen/Qwen2.5-0.5B-Instruct") -> None:
+    def __init__(
+        self,
+        model_name: str = "qwen3.5:4b-q4_K_M",
+        endpoint: str = "http://127.0.0.1:11434/api/chat",
+        timeout: int = 300,
+    ) -> None:
         self.model_name = model_name
-        self._tokenizer = None
-        self._model = None
-
-    def _load(self) -> None:
-        if self._model is not None:
-            return
-        try:
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-        except ImportError as exc:
-            raise RuntimeError(
-                "Transformers is not installed. Run: uv sync"
-            ) from exc
-
-        self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self._model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            torch_dtype="auto",
-            device_map="auto",
-        )
+        self.endpoint = endpoint
+        self.timeout = timeout
 
     def generate(self, prompt: str) -> str:
-        self._load()
-        assert self._tokenizer is not None
-        assert self._model is not None
-
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a cautious business research assistant. Use only the "
-                    "evidence supplied in the prompt. If a fact is not supported, say so."
-                ),
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a cautious business research assistant. Use only the "
+                        "evidence supplied in the prompt. If a fact is not supported, say so."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "stream": False,
+            "think": False,
+            "options": {
+                "temperature": 0,
+                "num_predict": 500,
             },
-            {"role": "user", "content": prompt},
-        ]
+        }
+        request = Request(
+            self.endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
 
-        text = self._tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        model_inputs = self._tokenizer([text], return_tensors="pt").to(
-            self._model.device
-        )
-        generated_ids = self._model.generate(
-            **model_inputs,
-            max_new_tokens=500,
-            do_sample=False,
-        )
-        response_ids = generated_ids[0][len(model_inputs.input_ids[0]) :]
-        return self._tokenizer.decode(response_ids, skip_special_tokens=True).strip()
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                result = json.load(response)
+        except HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"Ollama rejected the request ({exc.code}): {details}"
+            ) from exc
+        except (URLError, TimeoutError) as exc:
+            raise RuntimeError(
+                "Cannot connect to Ollama. Install and start Ollama, then run: "
+                f"ollama pull {self.model_name}"
+            ) from exc
+
+        content = result.get("message", {}).get("content", "").strip()
+        if not content:
+            raise RuntimeError("Ollama returned an empty model response.")
+        return content
 
 
 SEI_CONTEXT = (
